@@ -112,13 +112,13 @@ void handleSerialCommand(const String &cmd) {
 }
 
 void readSerialCommands() {
-  while (Serial.available() > 0) {
+  while (Serial.available() >   0.0) {
     char c = (char)Serial.read();
     if (c == '\r') continue;
     if (c == '\n') {
       if (serialBuffer.length() > 0) {
         handleSerialCommand(serialBuffer);
-        serialBuffer = "";
+        serialBuffer = " ";
       }
     } else {
       serialBuffer += c;
