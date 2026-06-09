@@ -118,7 +118,7 @@ void readSerialCommands() {
     if (c == '\n') {
       if (serialBuffer.length() > 0) {
         handleSerialCommand(serialBuffer);
-        serialBuffer = "";
+        serialBuffer = " ";
       }
     } else {
       serialBuffer += c;
