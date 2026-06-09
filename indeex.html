@@ -1,0 +1,1018 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ESP32 Sterowanie Grzałką</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600;700&family=Syne:wght@400;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0a0e1a;
+    --bg2: #111827;
+    --bg3: #1a2235;
+    --border: #1e2d45;
+    --accent: #f97316;
+    --accent2: #3b82f6;
+    --accent3: #10b981;
+    --danger: #ef4444;
+    --text: #e2e8f0;
+    --muted: #64748b;
+    --heat: #f97316;
+    --cool: #3b82f6;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'JetBrains Mono', monospace;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Background grid */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(249,115,22,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(249,115,22,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    grid-template-rows: auto 1fr;
+    min-height: 100vh;
+    position: relative;
+    z-index: 1;
+  }
+
+  /* HEADER */
+  header {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 28px;
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .logo-icon {
+    width: 36px; height: 36px;
+    background: var(--accent);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+  }
+
+  .logo h1 {
+    font-family: 'Syne', sans-serif;
+    font-size: 18px;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    color: var(--text);
+  }
+
+  .logo span {
+    font-size: 11px;
+    color: var(--muted);
+    font-weight: 300;
+    display: block;
+    letter-spacing: 0.1em;
+  }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .status-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--muted);
+    transition: all 0.3s;
+  }
+  .status-dot.connected { background: var(--accent3); box-shadow: 0 0 8px var(--accent3); animation: pulse 2s infinite; }
+  .status-dot.heating { background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: pulse 1s infinite; }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  #status-text {
+    font-size: 12px;
+    color: var(--muted);
+    letter-spacing: 0.05em;
+  }
+
+  /* SIDEBAR */
+  aside {
+    background: var(--bg2);
+    border-right: 1px solid var(--border);
+    padding: 24px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    overflow-y: auto;
+  }
+
+  .card {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px;
+  }
+
+  .card-label {
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .card-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  /* BIG TEMP DISPLAY */
+  .temp-display {
+    text-align: center;
+    padding: 8px 0;
+  }
+
+  #big-temp {
+    font-family: 'Syne', sans-serif;
+    font-size: 64px;
+    font-weight: 800;
+    line-height: 1;
+    color: var(--accent);
+    transition: color 0.5s;
+    letter-spacing: -2px;
+  }
+
+  #big-temp.cool { color: var(--accent2); }
+  #big-temp.hot  { color: var(--danger); }
+
+  .temp-unit {
+    font-size: 24px;
+    color: var(--muted);
+    font-weight: 300;
+  }
+
+  .temp-meta {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 12px;
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .temp-meta span strong {
+    color: var(--text);
+    font-weight: 600;
+  }
+
+  /* PWM BAR */
+  .pwm-section { margin-top: 4px; }
+
+  .pwm-header {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    margin-bottom: 6px;
+  }
+
+  .pwm-label { color: var(--muted); }
+  #pwm-val { color: var(--accent); font-weight: 700; font-size: 13px; }
+
+  .pwm-bar-bg {
+    height: 8px;
+    background: var(--bg);
+    border-radius: 4px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+
+  .pwm-bar-fill {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, var(--accent2), var(--accent));
+    border-radius: 4px;
+    transition: width 0.8s ease;
+  }
+
+  /* MODE BADGE */
+  .mode-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    transition: all 0.3s;
+  }
+  .mode-badge.pid   { border-color: var(--accent3); color: var(--accent3); }
+  .mode-badge.manual { border-color: var(--accent); color: var(--accent); }
+  .mode-badge.stop  { border-color: var(--muted); color: var(--muted); }
+
+  /* CONTROLS */
+  .connect-btn {
+    width: 100%;
+    padding: 12px;
+    border-radius: 10px;
+    border: none;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: var(--accent3);
+    color: #000;
+  }
+
+  .connect-btn:hover { filter: brightness(1.15); transform: translateY(-1px); }
+  .connect-btn.disconnect { background: var(--danger); color: white; }
+
+  .section-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .section-title .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--accent2);
+    flex-shrink: 0;
+  }
+
+  .section-title .dot.orange { background: var(--accent); }
+
+  .input-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+
+  .input-label {
+    font-size: 11px;
+    color: var(--muted);
+    min-width: 50px;
+    flex-shrink: 0;
+  }
+
+  input[type=number] {
+    flex: 1;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text);
+    text-align: center;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  input[type=number]:focus { border-color: var(--accent2); }
+
+  input[type=range] {
+    -webkit-appearance: none;
+    width: 100%;
+    height: 6px;
+    border-radius: 3px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    outline: none;
+    margin: 8px 0;
+  }
+
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    border: 2px solid var(--bg3);
+    transition: transform 0.1s;
+  }
+
+  input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.2); }
+
+  .range-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10px;
+    color: var(--muted);
+    margin-top: -4px;
+  }
+
+  .ctrl-btn {
+    width: 100%;
+    padding: 11px;
+    border-radius: 9px;
+    border: none;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-bottom: 8px;
+  }
+
+  .ctrl-btn:hover { filter: brightness(1.1); transform: translateY(-1px); }
+  .ctrl-btn:active { transform: translateY(0); }
+  .ctrl-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+  .btn-pid     { background: var(--accent2); color: white; }
+  .btn-manual { background: var(--accent); color: #000; }
+  .btn-stop   { background: var(--danger); color: white; }
+  .btn-export { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+  .btn-export:hover { color: var(--text); border-color: var(--muted); }
+
+  /* MAIN CHART AREA */
+  main {
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    overflow: hidden;
+  }
+
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+  }
+
+  .stat-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .stat-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+  }
+
+  .stat-card.s1::before { background: var(--accent); }
+  .stat-card.s2::before { background: var(--accent2); }
+  .stat-card.s3::before { background: var(--accent3); }
+  .stat-card.s4::before { background: #a855f7; }
+
+  .stat-label {
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+
+  .stat-val {
+    font-family: 'Syne', sans-serif;
+    font-size: 26px;
+    font-weight: 800;
+    color: var(--text);
+    line-height: 1;
+  }
+
+  .stat-sub {
+    font-size: 10px;
+    color: var(--muted);
+    margin-top: 4px;
+  }
+
+  /* CHART */
+  .chart-card {
+    flex: 1;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .chart-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+    flex-shrink: 0;
+  }
+
+  .chart-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 15px;
+    font-weight: 700;
+  }
+
+  .chart-legend {
+    display: flex;
+    gap: 16px;
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .legend-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+  }
+
+  .chart-wrap {
+    flex: 1;
+    min-height: 0;
+    position: relative;
+  }
+
+  /* LOG */
+  .log-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 16px;
+    max-height: 90px;
+    overflow-y: auto;
+    flex-shrink: 0;
+  }
+
+  .log-entry {
+    font-size: 11px;
+    color: var(--muted);
+    line-height: 1.8;
+    display: flex;
+    gap: 10px;
+  }
+
+  .log-time { color: var(--accent); flex-shrink: 0; }
+  .log-msg  { color: var(--text); }
+
+  /* scrollbar */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  /* Web Serial not supported */
+  .no-serial {
+    position: fixed;
+    inset: 0;
+    background: rgba(10,14,26,0.97);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    flex-direction: column;
+    gap: 16px;
+    text-align: center;
+    padding: 40px;
+  }
+
+  .no-serial h2 {
+    font-family: 'Syne', sans-serif;
+    font-size: 28px;
+    color: var(--danger);
+  }
+
+  .no-serial p {
+    color: var(--muted);
+    font-size: 13px;
+    max-width: 400px;
+    line-height: 1.7;
+  }
+
+  .no-serial code {
+    background: var(--bg3);
+    padding: 2px 8px;
+    border-radius: 4px;
+    color: var(--accent);
+    font-size: 12px;
+  }
+</style>
+</head>
+<body>
+
+<div class="no-serial" id="no-serial-warn" style="display:none">
+  <div style="font-size:48px">⚠️</div>
+  <h2>Web Serial nie jest obsługiwany</h2>
+  <p>Proszę używać przeglądarki <strong>Google Chrome</strong> lub <strong>Microsoft Edge</strong> (wersja 89+).<br>
+  Firefox nie obsługuje API Web Serial.<br><br>
+  Otwórz stronę w Chrome i sprawdź <code>chrome://flags</code> → włącz Web Serial jeśli to konieczne.</p>
+</div>
+
+<div class="layout">
+
+  <header>
+    <div class="logo">
+      <div class="logo-icon">🔥</div>
+      <div>
+        <h1>STEROWANIE GRZAŁKĄ</h1>
+        <span>ESP32 · KONTROLER PID · WEB SERIAL</span>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="status-dot" id="status-dot"></div>
+      <span id="status-text">ROZŁĄCZONO</span>
+    </div>
+  </header>
+
+  <aside>
+
+    <div class="card">
+      <div class="card-label">Temperatura</div>
+      <div class="temp-display">
+        <div id="big-temp">--.-<span class="temp-unit"> °C</span></div>
+      </div>
+      <div class="temp-meta">
+        <span>Cel: <strong id="meta-target">--</strong> °C</span>
+        <span>Δ: <strong id="meta-delta">--</strong> °C</span>
+      </div>
+      <div class="pwm-section" style="margin-top:14px">
+        <div class="pwm-header">
+          <span class="pwm-label">MOC GRZANIA</span>
+          <span id="pwm-val">0%</span>
+        </div>
+        <div class="pwm-bar-bg">
+          <div class="pwm-bar-fill" id="pwm-bar"></div>
+        </div>
+      </div>
+      <div style="margin-top:12px; text-align:center;">
+        <span class="mode-badge stop" id="mode-badge">● ZATRZYMANO</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-label">Połączenie</div>
+      <button class="connect-btn" id="btn-connect" onclick="toggleConnect()">
+        🔌 POŁĄCZ Z ESP32
+      </button>
+      <div style="font-size:10px; color:var(--muted); text-align:center; margin-top:8px; line-height:1.5">
+        Baudrate: 115200 · Protokół JSON
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-title"><span class="dot"></span> AUTOMATYKA · PID</div>
+      <div class="input-row">
+        <span class="input-label">Temp °C</span>
+        <input type="number" id="target-temp" value="40.0" min="20" max="85" step="0.5">
+      </div>
+      <input type="range" id="temp-slider" min="20" max="85" value="40" step="0.5"
+             oninput="document.getElementById('target-temp').value=this.value">
+      <div class="range-labels"><span>20°</span><span>52.5°</span><span>85°</span></div>
+      <button class="ctrl-btn btn-pid" onclick="sendPID()" id="btn-pid" disabled>
+        ▶ URUCHOM PID
+      </button>
+    </div>
+
+    <div class="card">
+      <div class="section-title"><span class="dot orange"></span> STEROWANIE RĘCZNE</div>
+      <div class="input-row">
+        <span class="input-label">Moc</span>
+        <input type="number" id="manual-pwm" value="50" min="0" max="100" step="5">
+        <span style="font-size:11px; color:var(--muted)">%</span>
+      </div>
+      <input type="range" id="pwm-slider" min="0" max="100" value="50" step="5"
+             oninput="document.getElementById('manual-pwm').value=this.value">
+      <div class="range-labels"><span>0%</span><span>50%</span><span>100%</span></div>
+      <button class="ctrl-btn btn-manual" onclick="sendManual()" id="btn-manual" disabled>
+        ⚡ USTAW MOC (SKOK)
+      </button>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:8px">
+      <button class="ctrl-btn btn-stop" onclick="sendStop()" id="btn-stop" disabled>
+        ■ ZATRZYMAJ GRZANIE
+      </button>
+      <button class="ctrl-btn btn-export" onclick="exportData()">
+        ↓ EKSPORTUJ DANE (.txt)
+      </button>
+    </div>
+
+  </aside>
+
+  <main>
+
+    <div class="stats-row">
+      <div class="stat-card s1">
+        <div class="stat-label">Temperatura</div>
+        <div class="stat-val" id="stat-temp">--</div>
+        <div class="stat-sub">°C aktualna</div>
+      </div>
+      <div class="stat-card s2">
+        <div class="stat-label">Temp. Docelowa</div>
+        <div class="stat-val" id="stat-target">--</div>
+        <div class="stat-sub">°C zadana</div>
+      </div>
+      <div class="stat-card s3">
+        <div class="stat-label">Moc PWM</div>
+        <div class="stat-val" id="stat-pwm">--</div>
+        <div class="stat-sub">% mocy grzania</div>
+      </div>
+      <div class="stat-card s4">
+        <div class="stat-label">Czas pracy</div>
+        <div class="stat-val" id="stat-time">0s</div>
+        <div class="stat-sub">od połączenia</div>
+      </div>
+    </div>
+
+    <div class="chart-card">
+      <div class="chart-header">
+        <div class="chart-title">Przebieg temperatury i mocy</div>
+        <div class="chart-legend">
+          <div class="legend-item">
+            <div class="legend-dot" style="background:#f97316"></div> Temperatura
+          </div>
+          <div class="legend-item">
+            <div class="legend-dot" style="background:#3b82f6"></div> Wartość zadana
+          </div>
+          <div class="legend-item">
+            <div class="legend-dot" style="background:rgba(249,115,22,0.35)"></div> PWM %
+          </div>
+        </div>
+      </div>
+      <div class="chart-wrap">
+        <canvas id="chart"></canvas>
+      </div>
+    </div>
+
+    <div class="log-card" id="log"></div>
+
+  </main>
+</div>
+
+<script>
+// ── SPRAWDZENIE WEB SERIAL ──────────────────────────────────────────
+if (!('serial' in navigator)) {
+  document.getElementById('no-serial-warn').style.display = 'flex';
+}
+
+// ── STAN ─────────────────────────────────────────────────────────
+let port = null;
+let reader = null;
+let writer = null;
+let connected = false;
+let startTime = Date.now();
+let historyData = [];
+
+const MAX_POINTS = 300;
+const timeArr   = [];
+const tempArr   = [];
+const targetArr = [];
+const pwmArr    = [];
+
+// ── KONFIGURACJA WYKRESU ──────────────────────────────────────────
+const ctx = document.getElementById('chart').getContext('2d');
+const chart = new Chart(ctx, {
+  type: 'line',
+  data: {
+    labels: timeArr,
+    datasets: [
+      {
+        label: 'Temperatura [°C]',
+        data: tempArr,
+        borderColor: '#f97316',
+        backgroundColor: 'rgba(249,115,22,0.08)',
+        borderWidth: 2.5,
+        pointRadius: 0,
+        tension: 0.3,
+        fill: true,
+        yAxisID: 'y1'
+      },
+      {
+        label: 'Cel [°C]',
+        data: targetArr,
+        borderColor: '#3b82f6',
+        borderWidth: 2,
+        borderDash: [6, 4],
+        pointRadius: 0,
+        tension: 0,
+        fill: false,
+        yAxisID: 'y1'
+      },
+      {
+        label: 'PWM [%]',
+        data: pwmArr,
+        borderColor: 'rgba(249,115,22,0.5)',
+        backgroundColor: 'rgba(249,115,22,0.12)',
+        borderWidth: 1.5,
+        pointRadius: 0,
+        tension: 0.3,
+        fill: true,
+        yAxisID: 'y2'
+      }
+    ]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: { duration: 0 },
+    interaction: { mode: 'index', intersect: false },
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: '#111827',
+        borderColor: '#1e2d45',
+        borderWidth: 1,
+        titleColor: '#64748b',
+        bodyColor: '#e2e8f0',
+        titleFont: { family: 'JetBrains Mono', size: 11 },
+        bodyFont: { family: 'JetBrains Mono', size: 12 }
+      }
+    },
+    scales: {
+      x: {
+        ticks: { color: '#64748b', font: { family: 'JetBrains Mono', size: 10 }, maxTicksLimit: 10 },
+        grid: { color: 'rgba(30,45,69,0.8)' },
+        border: { color: '#1e2d45' }
+      },
+      y1: {
+        type: 'linear',
+        position: 'left',
+        min: 15,
+        max: 95,
+        ticks: { color: '#f97316', font: { family: 'JetBrains Mono', size: 10 } },
+        grid: { color: 'rgba(30,45,69,0.8)' },
+        border: { color: '#1e2d45' }
+      },
+      y2: {
+        type: 'linear',
+        position: 'right',
+        min: 0,
+        max: 105,
+        ticks: { color: '#64748b', font: { family: 'JetBrains Mono', size: 10 }, callback: v => v + '%' },
+        grid: { drawOnChartArea: false },
+        border: { color: '#1e2d45' }
+      }
+    }
+  }
+});
+
+// ── POŁĄCZENIE SERIAL ──────────────────────────────────────────────
+async function toggleConnect() {
+  if (connected) {
+    await disconnect();
+  } else {
+    await connect();
+  }
+}
+
+async function connect() {
+  try {
+    port = await navigator.serial.requestPort();
+    await port.open({ baudRate: 115200 });
+    writer = port.writable.getWriter();
+    connected = true;
+    startTime = Date.now();
+    updateConnectionUI(true);
+    addLog('Połączono z ESP32');
+    readLoop();
+    setInterval(updateRuntime, 1000);
+  } catch (e) {
+    addLog('Błąd połączenia: ' + e.message);
+  }
+}
+
+async function disconnect() {
+  try {
+    await sendCmd('CMD:STOP');
+    if (reader) { await reader.cancel(); reader = null; }
+    if (writer) { writer.releaseLock(); writer = null; }
+    if (port)   { await port.close(); port = null; }
+  } catch(e) {}
+  connected = false;
+  updateConnectionUI(false);
+  addLog('Rozłączono');
+}
+
+async function readLoop() {
+  const decoder = new TextDecoderStream();
+  port.readable.pipeTo(decoder.writable);
+  reader = decoder.readable.getReader();
+  let buf = '';
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += value;
+      let nl;
+      while ((nl = buf.indexOf('\n')) !== -1) {
+        const line = buf.slice(0, nl).trim();
+        buf = buf.slice(nl + 1);
+        if (line.startsWith('{')) processData(line);
+      }
+    }
+  } catch (e) {
+    if (connected) addLog('Błąd odczytu: ' + e.message);
+  }
+}
+
+// ── PRZETWARZANIE DANYCH ──────────────────────────────────────────
+function processData(line) {
+  try {
+    const d = JSON.parse(line);
+    if (d.error) { addLog('⚠ ' + d.error); return; }
+
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    const pwmPct = Math.round((d.pwm / 255) * 100);
+
+    // push data
+    if (timeArr.length >= MAX_POINTS) {
+      timeArr.shift(); tempArr.shift(); targetArr.shift(); pwmArr.shift();
+    }
+    timeArr.push(elapsed + 's');
+    tempArr.push(d.temp);
+    targetArr.push(d.target);
+    pwmArr.push(pwmPct);
+    historyData.push({ t: elapsed, temp: d.temp, target: d.target, pwm: pwmPct });
+
+    chart.update();
+
+    // update sidebar
+    const tempEl = document.getElementById('big-temp');
+    tempEl.innerHTML = d.temp.toFixed(1) + '<span class="temp-unit"> °C</span>';
+    const diff = d.temp - d.target;
+    tempEl.className = diff > 3 ? 'hot' : diff < -3 ? 'cool' : '';
+
+    document.getElementById('meta-target').textContent = d.target.toFixed(1);
+    document.getElementById('meta-delta').textContent = (diff >= 0 ? '+' : '') + diff.toFixed(1);
+
+    document.getElementById('pwm-val').textContent = pwmPct + '%';
+    document.getElementById('pwm-bar').style.width = pwmPct + '%';
+
+    // mode badge
+    const badge = document.getElementById('mode-badge');
+    const dot = document.getElementById('status-dot');
+    if (d.is_heating) {
+      if (d.manual) {
+        badge.className = 'mode-badge manual';
+        badge.textContent = '⚡ RĘCZNY';
+        dot.className = 'status-dot heating';
+      } else {
+        badge.className = 'mode-badge pid';
+        badge.textContent = '● PID AKTYWNY';
+        dot.className = 'status-dot connected';
+      }
+    } else {
+      badge.className = 'mode-badge stop';
+      badge.textContent = '■ ZATRZYMANO';
+      dot.className = 'status-dot connected';
+    }
+
+    // stats
+    document.getElementById('stat-temp').textContent = d.temp.toFixed(1);
+    document.getElementById('stat-target').textContent = d.target.toFixed(1);
+    document.getElementById('stat-pwm').textContent = pwmPct;
+
+  } catch(e) {}
+}
+
+// ── KOMENDY ───────────────────────────────────────────────────────
+async function sendCmd(cmd) {
+  if (!writer) return;
+  const enc = new TextEncoder();
+  await writer.write(enc.encode(cmd + '\n'));
+}
+
+async function sendPID() {
+  const t = document.getElementById('target-temp').value;
+  await sendCmd('TARGET:' + t);
+  addLog('Start PID → Cel: ' + t + '°C');
+}
+
+async function sendManual() {
+  const p = document.getElementById('manual-pwm').value;
+  await sendCmd('MANUAL:' + p);
+  addLog('Tryb ręczny: ' + p + '% mocy');
+}
+
+async function sendStop() {
+  await sendCmd('CMD:STOP');
+  addLog('Grzanie zatrzymane');
+}
+
+// ── SYNCHRONIZACJA SUWAKÓW ────────────────────────────────────────
+document.getElementById('target-temp').addEventListener('input', function() {
+  document.getElementById('temp-slider').value = this.value;
+});
+document.getElementById('manual-pwm').addEventListener('input', function() {
+  document.getElementById('pwm-slider').value = this.value;
+});
+
+// ── LICZNIK CZASU PRACY ──────────────────────────────────────────
+function updateRuntime() {
+  if (!connected) return;
+  const s = Math.floor((Date.now() - startTime) / 1000);
+  const m = Math.floor(s / 60);
+  document.getElementById('stat-time').textContent = m > 0 ? `${m}m ${s%60}s` : `${s}s`;
+}
+
+// ── UI HELPERS ────────────────────────────────────────────────────
+function updateConnectionUI(isConnected) {
+  const btn = document.getElementById('btn-connect');
+  const dot = document.getElementById('status-dot');
+  const txt = document.getElementById('status-text');
+  const btns = ['btn-pid', 'btn-manual', 'btn-stop'];
+
+  if (isConnected) {
+    btn.textContent = '⏏ ODŁĄCZ URZĄDZENIE';
+    btn.className = 'connect-btn disconnect';
+    dot.className = 'status-dot connected';
+    txt.textContent = 'POŁĄCZONO';
+    btns.forEach(id => document.getElementById(id).disabled = false);
+  } else {
+    btn.textContent = '🔌 POŁĄCZ Z ESP32';
+    btn.className = 'connect-btn';
+    dot.className = 'status-dot';
+    txt.textContent = 'ROZŁĄCZONO';
+    btns.forEach(id => document.getElementById(id).disabled = true);
+    document.getElementById('big-temp').innerHTML = '--.-<span class="temp-unit"> °C</span>';
+    document.getElementById('big-temp').className = '';
+    document.getElementById('mode-badge').className = 'mode-badge stop';
+    document.getElementById('mode-badge').textContent = '■ ZATRZYMANO';
+    document.getElementById('pwm-val').textContent = '0%';
+    document.getElementById('pwm-bar').style.width = '0%';
+  }
+}
+
+// ── LOG ───────────────────────────────────────────────────────────
+function addLog(msg) {
+  const log = document.getElementById('log');
+  const now = new Date().toLocaleTimeString('pl-PL', { hour12: false });
+  const el = document.createElement('div');
+  el.className = 'log-entry';
+  el.innerHTML = `<span class="log-time">[${now}]</span><span class="log-msg">${msg}</span>`;
+  log.appendChild(el);
+  log.scrollTop = log.scrollHeight;
+}
+
+// ── EKSPORT ───────────────────────────────────────────────────────
+function exportData() {
+  if (!historyData.length) { addLog('Brak danych do eksportu'); return; }
+  let txt = 'czas[s]\ttemp[C]\tcel[C]\tmoc[%]\n';
+  historyData.forEach(d => {
+    txt += `${d.t}\t${d.temp.toFixed(2)}\t${d.target.toFixed(2)}\t${d.pwm}\n`;
+  });
+  const blob = new Blob([txt], { type: 'text/plain' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `dane_grzalki_${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.txt`;
+  a.click();
+  addLog('Dane wyeksportowane: ' + historyData.length + ' punktów');
+}
+
+// Inicjalizacja logu
+addLog('System gotowy. Kliknij "POŁĄCZ Z ESP32"');
+</script>
+</body>
+</html>
