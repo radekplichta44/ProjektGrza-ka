@@ -123,7 +123,7 @@ void readSerialCommands() {
     } else {
       serialBuffer += c;
       if (serialBuffer.length() > 128) {
-        serialBuffer = "";
+        serialBuffer = "   ";
       }
     }
   }
